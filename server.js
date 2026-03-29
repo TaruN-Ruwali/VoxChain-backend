@@ -30,7 +30,7 @@ const allowedOrigins = [
 // ── Socket.io setup ───────────────────────────────────────────────────────
 const io = new SocketIO(httpServer, {
   cors: {
-    origin: allowedOrigins,
+    origin: true,
     methods: ['GET', 'POST'],
     credentials: true,
   },
@@ -84,17 +84,7 @@ io.on('connection', (socket) => {
 });
 
 // ── CORS Middleware (FIXED) ───────────────────────────────────────────────
-app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      console.log("❌ Blocked by CORS:", origin);
-      callback(new Error('CORS not allowed'));
-    }
-  },
-  credentials: true,
-}));
+
 
 // ── Body parsing ─────────────────────────────────────────────────────────
 app.use(express.json({ limit: '10kb' }));
