@@ -8,7 +8,7 @@ const cors = require('cors');
 const app = express();
 
 app.use(cors({
-  origin: "https://vox-chain-alpha.vercel.app",
+  origin: true,
   credentials: true,
 }));
 
