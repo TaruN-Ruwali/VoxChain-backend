@@ -5,6 +5,11 @@ const http = require('http');
 const { Server: SocketIO } = require('socket.io');
 const cors = require('cors');
 
+app.use(cors({
+  origin: "https://vox-chain-alpha.vercel.app",
+  credentials: true,
+}));
+
 const connectDB = require('./config/db');
 const { loadAccount } = require('./config/algorand');
 const authRoutes = require('./routes/authRoutes');
