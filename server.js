@@ -14,10 +14,16 @@ const { errorHandler, notFound } = require('./middleware/errorHandler');
 const app = express();
 const httpServer = http.createServer(app);
 
+// ✅ Allowed origins (IMPORTANT)
+const allowedOrigins = [
+  process.env.CLIENT_URL,                 // deployed frontend
+  'http://localhost:5173',               // local frontend
+];
+
 // ── Socket.io setup ───────────────────────────────────────────────────────
 const io = new SocketIO(httpServer, {
   cors: {
-    origin: process.env.CLIENT_URL || 'http://localhost:5173',
+    origin: allowedOrigins,
     methods: ['GET', 'POST'],
     credentials: true,
   },
@@ -28,20 +34,39 @@ app.set('io', io);
 io.on('connection', (socket) => {
   console.log(`🔌 Socket connected: ${socket.id}`);
 
-  // Send current results on connect
+  // Send results on request
   socket.on('requestResults', async () => {
     try {
       const Vote = require('./models/Vote');
+
       const results = await Vote.aggregate([
-        { $group: { _id: { candidateId: '$candidateId', candidate: '$candidate' }, votes: { $sum: 1 } } },
-        { $project: { _id: 0, candidateId: '$_id.candidateId', candidate: '$_id.candidate', votes: 1 } },
+        {
+          $group: {
+            _id: {
+              candidateId: '$candidateId',
+              candidate: '$candidate',
+            },
+            votes: { $sum: 1 },
+          },
+        },
+        {
+          $project: {
+            _id: 0,
+            candidateId: '$_id.candidateId',
+            candidate: '$_id.candidate',
+            votes: 1,
+          },
+        },
         { $sort: { votes: -1 } },
       ]);
+
       socket.emit('currentResults', {
         results,
         totalVotes: results.reduce((s, r) => s + r.votes, 0),
       });
+
     } catch (err) {
+      console.error(err);
       socket.emit('socketError', { message: 'Failed to fetch results' });
     }
   });
@@ -51,15 +76,24 @@ io.on('connection', (socket) => {
   });
 });
 
-// ── Middleware ─────────────────────────────────────────────────────────────
+// ── CORS Middleware (FIXED) ───────────────────────────────────────────────
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:5173',
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.log("❌ Blocked by CORS:", origin);
+      callback(new Error('CORS not allowed'));
+    }
+  },
   credentials: true,
 }));
+
+// ── Body parsing ─────────────────────────────────────────────────────────
 app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 
-// Request logger (dev only)
+// ── Dev logger ───────────────────────────────────────────────────────────
 if (process.env.NODE_ENV !== 'production') {
   app.use((req, _res, next) => {
     console.log(`→ ${req.method} ${req.originalUrl}`);
@@ -67,38 +101,54 @@ if (process.env.NODE_ENV !== 'production') {
   });
 }
 
-// ── Routes ─────────────────────────────────────────────────────────────────
+// ── Routes ───────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {
-  res.json({ success: true, message: 'VoxChain API is running', timestamp: new Date().toISOString() });
+  res.json({
+    success: true,
+    message: 'VoxChain API is running',
+    timestamp: new Date().toISOString(),
+  });
 });
 
 app.use('/api', authRoutes);
 app.use('/api', voteRoutes);
 
+// ── Error handling ───────────────────────────────────────────────────────
 app.use(notFound);
 app.use(errorHandler);
 
-// ── Start ──────────────────────────────────────────────────────────────────
+// ── Start server ─────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 5000;
 
 const start = async () => {
-  await connectDB();
-  loadAccount();
-  httpServer.listen(PORT, () => {
-    console.log(`\n🚀 VoxChain API  →  http://localhost:${PORT}`);
-    console.log(`   Socket.io     →  enabled`);
-    console.log(`   Environment   →  ${process.env.NODE_ENV || 'development'}\n`);
-  });
+  try {
+    await connectDB();
+    loadAccount();
+
+    httpServer.listen(PORT, () => {
+      console.log(`\n🚀 VoxChain API running on port ${PORT}`);
+      console.log(`🌐 Allowed Origin → ${process.env.CLIENT_URL}`);
+      console.log(`🔌 Socket.io enabled`);
+      console.log(`📦 Environment → ${process.env.NODE_ENV || 'development'}\n`);
+    });
+
+  } catch (err) {
+    console.error("❌ Failed to start server:", err.message);
+    process.exit(1);
+  }
 };
 
 start();
 
+// ── Graceful shutdown ────────────────────────────────────────────────────
 const shutdown = (signal) => {
   console.log(`\n${signal} — shutting down...`);
   httpServer.close(() => process.exit(0));
 };
+
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
+
 process.on('unhandledRejection', (err) => {
   console.error('Unhandled rejection:', err.message);
   httpServer.close(() => process.exit(1));
