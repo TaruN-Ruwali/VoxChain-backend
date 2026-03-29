@@ -5,6 +5,8 @@ const http = require('http');
 const { Server: SocketIO } = require('socket.io');
 const cors = require('cors');
 
+const app = express();
+
 app.use(cors({
   origin: "https://vox-chain-alpha.vercel.app",
   credentials: true,
@@ -16,7 +18,7 @@ const authRoutes = require('./routes/authRoutes');
 const voteRoutes = require('./routes/voteRoutes');
 const { errorHandler, notFound } = require('./middleware/errorHandler');
 
-const app = express();
+
 const httpServer = http.createServer(app);
 
 // ✅ Allowed origins (IMPORTANT)
